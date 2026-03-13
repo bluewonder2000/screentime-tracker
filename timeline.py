@@ -41,8 +41,8 @@ def build_timeline(window_events, afk_events, web_events=None):
     # Subtract AFK time from blocks
     blocks = _subtract_afk(blocks, afk_intervals)
 
-    # Filter out tiny blocks (< 10 seconds active)
-    blocks = [b for b in blocks if b["active_minutes"] >= 0.17]
+    # Filter out blocks with no raw duration
+    blocks = [b for b in blocks if b["duration_seconds"] > 0]
 
     # Detect patterns
     flow_blocks = _detect_flow_blocks(blocks)
@@ -113,6 +113,8 @@ def _merge_window_events(events):
         cat_title = web_title or title
         category = categorize(app, cat_title)
 
+        device = event.get("device", "Unknown")
+
         if current is None:
             current = {
                 "app": app,
@@ -122,6 +124,7 @@ def _merge_window_events(events):
                 "duration_seconds": duration,
                 "titles": [title] if title else [],
                 "web_titles": [web_title] if web_title else [],
+                "device": device,
             }
             continue
 
@@ -144,6 +147,7 @@ def _merge_window_events(events):
                 "duration_seconds": duration,
                 "titles": [title] if title else [],
                 "web_titles": [web_title] if web_title else [],
+                "device": device,
             }
 
     if current:
@@ -157,29 +161,31 @@ def _merge_window_events(events):
 
 
 def _build_afk_intervals(afk_events):
-    """Build list of (start, end) tuples where user was AFK."""
+    """Build list of (start, end, device) tuples where user was AFK."""
     intervals = []
     for event in afk_events:
         if event["data"].get("status") == "afk":
             start = event["timestamp"]
             end = start + timedelta(seconds=event["duration"])
-            intervals.append((start, end))
+            device = event.get("device", "Unknown")
+            intervals.append((start, end, device))
     return intervals
 
 
 def _subtract_afk(blocks, afk_intervals):
-    """Subtract AFK time from block durations."""
+    """Subtract AFK time from block durations (per-device)."""
     for block in blocks:
         afk_seconds = 0
-        for afk_start, afk_end in afk_intervals:
+        block_device = block.get("device", "Unknown")
+        for afk_start, afk_end, afk_device in afk_intervals:
+            if afk_device != block_device:
+                continue
             overlap_start = max(block["start"], afk_start)
             overlap_end = min(block["end"], afk_end)
             if overlap_start < overlap_end:
                 afk_seconds += (overlap_end - overlap_start).total_seconds()
-
         active_seconds = max(0, block["duration_seconds"] - afk_seconds)
         block["active_minutes"] = active_seconds / 60
-
     return blocks
 
 
@@ -192,36 +198,35 @@ def _detect_flow_blocks(blocks):
 
 
 def _build_afk_gaps(afk_events):
-    """Build list of significant AFK gaps, merging overlapping intervals."""
-    raw = []
+    """Build list of significant AFK gaps, merging overlapping intervals per device."""
+    by_device = {}
     for event in afk_events:
         if event["data"].get("status") == "afk":
+            device = event.get("device", "Unknown")
             start = event["timestamp"]
             end = start + timedelta(seconds=event["duration"])
-            raw.append((start, end))
+            by_device.setdefault(device, []).append((start, end))
 
-    if not raw:
-        return []
-
-    # Sort and merge overlapping intervals
-    raw.sort()
-    merged = [raw[0]]
-    for start, end in raw[1:]:
-        if start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-
-    # Filter by minimum duration
-    min_duration = timedelta(minutes=AFK_MIN_MINUTES)
     gaps = []
-    for start, end in merged:
-        duration = end - start
-        if duration >= min_duration:
-            gaps.append({
-                "start": start,
-                "end": end,
-                "duration_minutes": duration.total_seconds() / 60,
-            })
+    min_duration = timedelta(minutes=AFK_MIN_MINUTES)
+    for device, raw in by_device.items():
+        raw.sort()
+        merged = [raw[0]]
+        for start, end in raw[1:]:
+            if start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
 
+        for start, end in merged:
+            duration = end - start
+            if duration >= min_duration:
+                gaps.append({
+                    "start": start,
+                    "end": end,
+                    "duration_minutes": duration.total_seconds() / 60,
+                    "device": device,
+                })
+
+    gaps.sort(key=lambda g: g["start"])
     return gaps
