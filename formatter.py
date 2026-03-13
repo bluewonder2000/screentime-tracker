@@ -72,15 +72,16 @@ def format_report(date, timeline_data):
 
     # Timeline table (filter out very short blocks for readability)
     lines.append("### Timeline")
-    lines.append("| Time | App | Category | Duration | Detail |")
-    lines.append("|------|-----|----------|----------|--------|")
+    lines.append("| Time | Device | App | Category | Duration | Detail |")
+    lines.append("|------|--------|-----|----------|----------|--------|")
     for block in blocks:
         if block["active_minutes"] * 60 < TIMELINE_MIN_SECONDS:
             continue
         time_str = _local(block["start"]).strftime("%-I:%M%p").lower()
         dur = _fmt_duration(block["active_minutes"])
         detail = _get_detail(block)
-        lines.append(f"| {time_str} | {block['app']} | {block['category']} | {dur} | {detail} |")
+        device = block.get("device", "")
+        lines.append(f"| {time_str} | {device} | {block['app']} | {block['category']} | {dur} | {detail} |")
     lines.append("")
 
     return "\n".join(lines)
