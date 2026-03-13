@@ -5,7 +5,7 @@ from pathlib import Path
 # ActivityWatch API — one entry per device
 DEVICES = [
     {"name": "Mac", "url": "http://localhost:5600/api/0"},
-    # {"name": "Windows", "url": "http://<tailscale-ip>:5600/api/0"},
+    {"name": "Windows", "url": "http://100.123.56.28:5600/api/0"},
 ]
 
 # Obsidian output

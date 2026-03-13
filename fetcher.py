@@ -27,7 +27,7 @@ def discover_buckets_for_device(device):
         (window_bucket, afk_bucket, web_bucket) — any may be None
     """
     base_url = device["url"]
-    buckets = _get_json(f"{base_url}/buckets")
+    buckets = _get_json(f"{base_url}/buckets/")
 
     window = None
     afk = None
