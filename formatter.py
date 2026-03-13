@@ -7,7 +7,7 @@ from config import CATEGORY_ORDER, TIMELINE_MIN_SECONDS
 _LOCAL_TZ = datetime.now().astimezone().tzinfo
 
 
-def _local(dt):
+def to_local(dt):
     """Convert a datetime to local time for display."""
     return dt.astimezone(_LOCAL_TZ)
 
@@ -34,7 +34,7 @@ def format_report(date, timeline_data):
     lines.append(f"## {date_str} SCREENTIME\n")
 
     # Summary line
-    total_hrs = _fmt_hours(total_active)
+    total_hrs = fmt_hours(total_active)
     afk_count = len(afk_gaps)
     flow_count = len(flow_blocks)
     lines.append(f"**Total:** {total_hrs} active | {afk_count} AFK gap{'s' if afk_count != 1 else ''} | {flow_count} flow block{'s' if flow_count != 1 else ''}\n")
@@ -47,16 +47,16 @@ def format_report(date, timeline_data):
     )
     for cat, minutes in ordered_cats:
         pct = (minutes / total_active * 100) if total_active > 0 else 0
-        lines.append(f"- {cat}: {_fmt_hours(minutes)} ({pct:.0f}%)")
+        lines.append(f"- {cat}: {fmt_hours(minutes)} ({pct:.0f}%)")
     lines.append("")
 
     # Flow Blocks
     if flow_blocks:
         lines.append("### Flow Blocks (30+ min uninterrupted)")
         for fb in flow_blocks:
-            start = _local(fb["start"]).strftime("%-I:%M%p").lower()
-            end = _local(fb["end"]).strftime("%-I:%M%p").lower()
-            dur = _fmt_duration(fb["active_minutes"])
+            start = to_local(fb["start"]).strftime("%-I:%M%p").lower()
+            end = to_local(fb["end"]).strftime("%-I:%M%p").lower()
+            dur = fmt_duration(fb["active_minutes"])
             lines.append(f"- {start}–{end} — {fb['app']} ({fb['category']}) — {dur}")
         lines.append("")
 
@@ -64,9 +64,9 @@ def format_report(date, timeline_data):
     if afk_gaps:
         lines.append("### AFK Gaps")
         for gap in afk_gaps:
-            start = _local(gap["start"]).strftime("%-I:%M%p").lower()
-            end = _local(gap["end"]).strftime("%-I:%M%p").lower()
-            dur = _fmt_duration(gap["duration_minutes"])
+            start = to_local(gap["start"]).strftime("%-I:%M%p").lower()
+            end = to_local(gap["end"]).strftime("%-I:%M%p").lower()
+            dur = fmt_duration(gap["duration_minutes"])
             lines.append(f"- {start}–{end} ({dur})")
         lines.append("")
 
@@ -77,8 +77,8 @@ def format_report(date, timeline_data):
     for block in blocks:
         if block["active_minutes"] * 60 < TIMELINE_MIN_SECONDS:
             continue
-        time_str = _local(block["start"]).strftime("%-I:%M%p").lower()
-        dur = _fmt_duration(block["active_minutes"])
+        time_str = to_local(block["start"]).strftime("%-I:%M%p").lower()
+        dur = fmt_duration(block["active_minutes"])
         detail = _get_detail(block)
         device = block.get("device", "")
         lines.append(f"| {time_str} | {device} | {block['app']} | {block['category']} | {dur} | {detail} |")
@@ -116,7 +116,7 @@ def _truncate(text, max_len):
     return text[:max_len - 1] + "…"
 
 
-def _fmt_hours(minutes):
+def fmt_hours(minutes):
     """Format minutes as 'X.Xhrs'."""
     hrs = minutes / 60
     if hrs < 0.1:
@@ -124,7 +124,7 @@ def _fmt_hours(minutes):
     return f"{hrs:.1f}hrs"
 
 
-def _fmt_duration(minutes):
+def fmt_duration(minutes):
     """Format minutes as 'Xh Ym' or 'Ym'."""
     if minutes < 1:
         return f"{minutes * 60:.0f}s"
