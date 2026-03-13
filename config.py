@@ -2,17 +2,17 @@
 
 from pathlib import Path
 
-# ActivityWatch API
-AW_BASE_URL = "http://localhost:5600/api/0"
+# ActivityWatch API — one entry per device
+DEVICES = [
+    {"name": "Mac", "url": "http://localhost:5600/api/0"},
+    # {"name": "Windows", "url": "http://<tailscale-ip>:5600/api/0"},
+]
 
 # Obsidian output
 OUTPUT_DIR = Path.home() / "Documents/main/CALENDAR/Weekly Screentime"
 
-# Bucket names (auto-discovered, but can override here)
-# Set to None to auto-discover from API
-WINDOW_BUCKET = None
-AFK_BUCKET = None
-WEB_BUCKET = None
+# Weekly report config
+WEEK_START_HOUR = 12  # Sunday noon boundary for weekly reports
 
 # App → Category mappings
 # Keys are lowercased app names (or substrings)
