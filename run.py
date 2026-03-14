@@ -26,7 +26,14 @@ def fetch_and_build_timeline(target_date):
     Returns:
         timeline_data dict, or None if no data available.
     """
+    from biome_reader import fetch_iphone_events
+
     device_data = fetch_all_devices(DEVICES, target_date)
+
+    iphone_data = fetch_iphone_events(target_date)
+    if iphone_data:
+        device_data["iPhone"] = iphone_data
+
     if not device_data:
         return None
 

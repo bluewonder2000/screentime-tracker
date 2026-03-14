@@ -4,6 +4,7 @@ from datetime import timedelta
 from categorizer import categorize
 from config import (
     MERGE_GAP_SECONDS,
+    MERGE_ABSORB_SECONDS,
     FLOW_BLOCK_MIN_MINUTES,
     AFK_MIN_MINUTES,
     EXCLUDED_APPS,
@@ -35,8 +36,8 @@ def build_timeline(window_events, afk_events, web_events=None):
     if web_events:
         window_events = _enrich_with_web_titles(window_events, web_events)
 
-    # Merge consecutive same-app events
-    blocks = _merge_window_events(window_events)
+    # Merge consecutive same-app events per device, then interleave
+    blocks = _merge_per_device(window_events)
 
     # Subtract AFK time from blocks
     blocks = _subtract_afk(blocks, afk_intervals)
@@ -93,8 +94,74 @@ def _enrich_with_web_titles(window_events, web_events):
     return window_events
 
 
+def _merge_per_device(events):
+    """Group events by device, merge within each device, then interleave by start time."""
+    if not events:
+        return []
+
+    by_device = {}
+    for event in events:
+        device = event.get("device", "Unknown")
+        by_device.setdefault(device, []).append(event)
+
+    all_blocks = []
+    for device, dev_events in by_device.items():
+        dev_events.sort(key=lambda e: e["timestamp"])
+        merged = _merge_window_events(dev_events)
+        absorbed = _absorb_short_switches(merged)
+        all_blocks.extend(absorbed)
+
+    all_blocks.sort(key=lambda b: b["start"])
+    return all_blocks
+
+
+def _absorb_short_switches(blocks):
+    """Absorb brief app switches back into the surrounding app.
+
+    If block B is shorter than MERGE_ABSORB_SECONDS and the blocks on both
+    sides (A and C) are the same app, merge A+B+C into one block.
+    Repeat until stable.
+    """
+    changed = True
+    while changed:
+        changed = False
+        result = []
+        i = 0
+        while i < len(blocks):
+            if (i + 2 < len(blocks)
+                    and blocks[i]["app"] == blocks[i + 2]["app"]
+                    and blocks[i + 1]["duration_seconds"] < MERGE_ABSORB_SECONDS):
+                a, b, c = blocks[i], blocks[i + 1], blocks[i + 2]
+                merged = {
+                    "app": a["app"],
+                    "category": a["category"],
+                    "start": a["start"],
+                    "end": c["end"],
+                    "duration_seconds": a["duration_seconds"] + b["duration_seconds"] + c["duration_seconds"],
+                    "titles": a["titles"][:],
+                    "web_titles": a["web_titles"][:],
+                    "device": a["device"],
+                }
+                # Only carry over titles from same-app blocks (a, c), not the absorbed block (b)
+                for t in c["titles"]:
+                    if t and t not in merged["titles"]:
+                        merged["titles"].append(t)
+                for t in c["web_titles"]:
+                    if t and t not in merged["web_titles"]:
+                        merged["web_titles"].append(t)
+                merged["active_minutes"] = merged["duration_seconds"] / 60
+                result.append(merged)
+                i += 3
+                changed = True
+            else:
+                result.append(blocks[i])
+                i += 1
+        blocks = result
+    return blocks
+
+
 def _merge_window_events(events):
-    """Merge consecutive events with the same app into blocks."""
+    """Merge consecutive events with the same app into blocks (single device)."""
     if not events:
         return []
 

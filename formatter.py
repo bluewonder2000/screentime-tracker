@@ -31,7 +31,6 @@ def format_report(date, timeline_data):
     date_str = date.strftime("%Y-%m-%d")
 
     lines = []
-    lines.append(f"## {date_str} SCREENTIME\n")
 
     # Summary line
     total_hrs = fmt_hours(total_active)
@@ -47,7 +46,7 @@ def format_report(date, timeline_data):
     )
     for cat, minutes in ordered_cats:
         pct = (minutes / total_active * 100) if total_active > 0 else 0
-        lines.append(f"- {cat}: {fmt_hours(minutes)} ({pct:.0f}%)")
+        lines.append(f"- {cat}: {fmt_duration(minutes)} ({pct:.0f}%)")
     lines.append("")
 
     # Flow Blocks
@@ -58,16 +57,6 @@ def format_report(date, timeline_data):
             end = to_local(fb["end"]).strftime("%-I:%M%p").lower()
             dur = fmt_duration(fb["active_minutes"])
             lines.append(f"- {start}–{end} — {fb['app']} ({fb['category']}) — {dur}")
-        lines.append("")
-
-    # AFK Gaps
-    if afk_gaps:
-        lines.append("### AFK Gaps")
-        for gap in afk_gaps:
-            start = to_local(gap["start"]).strftime("%-I:%M%p").lower()
-            end = to_local(gap["end"]).strftime("%-I:%M%p").lower()
-            dur = fmt_duration(gap["duration_minutes"])
-            lines.append(f"- {start}–{end} ({dur})")
         lines.append("")
 
     # Timeline table (filter out very short blocks for readability)
@@ -104,6 +93,9 @@ def _get_detail(block):
         for sep in [" — ", " - ", " | "]:
             if sep in title:
                 title = title.rsplit(sep, 1)[0]
+        # Skip if the detail is just the app name repeated
+        if title.lower() == block["app"].lower():
+            return ""
         return _truncate(title, 60)
 
     return ""
