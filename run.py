@@ -30,9 +30,12 @@ def fetch_and_build_timeline(target_date):
 
     device_data = fetch_all_devices(DEVICES, target_date)
 
-    iphone_data = fetch_iphone_events(target_date)
-    if iphone_data:
-        device_data["iPhone"] = iphone_data
+    try:
+        iphone_data = fetch_iphone_events(target_date)
+        if iphone_data:
+            device_data["iPhone"] = iphone_data
+    except PermissionError:
+        print("WARNING: Cannot read iPhone Biome data (no Full Disk Access). Skipping iPhone.")
 
     if not device_data:
         return None
@@ -78,15 +81,15 @@ def generate_report(target_date):
 
 
 def get_week_range(reference_date):
-    """Get the Sunday-to-Sunday range containing reference_date.
+    """Get the most recent completed Sunday-to-Sunday range.
 
-    Week runs Sunday noon to next Sunday noon. We fetch full days
-    Sunday through Sunday (8 days) and let DAY_START_HOUR handle
-    the noon boundary on each end.
+    Week runs Sunday noon to next Sunday noon. Given any reference_date,
+    find the most recent Sunday on or before that date and return the
+    week ending on that Sunday (i.e. the previous 7 days).
     """
     days_since_sunday = (reference_date.weekday() + 1) % 7
-    week_start = reference_date - timedelta(days=days_since_sunday)
-    week_end = week_start + timedelta(days=7)  # Next Sunday
+    week_end = reference_date - timedelta(days=days_since_sunday)
+    week_start = week_end - timedelta(days=7)
     return week_start, week_end
 
 
@@ -134,7 +137,7 @@ def generate_weekly_report(reference_date=None):
     report = format_weekly_report(week_start, week_end, days_data)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"{week_start.isoformat()} WEEKLY.md"
+    filename = f"{week_end.isoformat()} WEEKLY.md"
     output_path = OUTPUT_DIR / filename
     output_path.write_text(report)
     print(f"  Written to {output_path}")

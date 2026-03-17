@@ -140,6 +140,7 @@ def _absorb_short_switches(blocks):
                     "duration_seconds": a["duration_seconds"] + b["duration_seconds"] + c["duration_seconds"],
                     "titles": a["titles"][:],
                     "web_titles": a["web_titles"][:],
+                    "web_urls": a.get("web_urls", [])[:],
                     "device": a["device"],
                 }
                 # Only carry over titles from same-app blocks (a, c), not the absorbed block (b)
@@ -149,6 +150,9 @@ def _absorb_short_switches(blocks):
                 for t in c["web_titles"]:
                     if t and t not in merged["web_titles"]:
                         merged["web_titles"].append(t)
+                for u in c.get("web_urls", []):
+                    if u and u not in merged["web_urls"]:
+                        merged["web_urls"].append(u)
                 merged["active_minutes"] = merged["duration_seconds"] / 60
                 result.append(merged)
                 i += 3
@@ -191,6 +195,7 @@ def _merge_window_events(events):
                 "duration_seconds": duration,
                 "titles": [title] if title else [],
                 "web_titles": [web_title] if web_title else [],
+                "web_urls": [web_url] if web_url else [],
                 "device": device,
             }
             continue
@@ -204,6 +209,8 @@ def _merge_window_events(events):
                 current["titles"].append(title)
             if web_title and web_title not in current["web_titles"]:
                 current["web_titles"].append(web_title)
+            if web_url and web_url not in current["web_urls"]:
+                current["web_urls"].append(web_url)
         else:
             blocks.append(current)
             current = {
@@ -214,6 +221,7 @@ def _merge_window_events(events):
                 "duration_seconds": duration,
                 "titles": [title] if title else [],
                 "web_titles": [web_title] if web_title else [],
+                "web_urls": [web_url] if web_url else [],
                 "device": device,
             }
 

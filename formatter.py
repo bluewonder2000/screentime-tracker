@@ -23,20 +23,15 @@ def format_report(date, timeline_data):
         Markdown string
     """
     blocks = timeline_data["blocks"]
-    flow_blocks = timeline_data["flow_blocks"]
-    afk_gaps = timeline_data["afk_gaps"]
     totals = timeline_data["category_totals"]
 
     total_active = sum(totals.values())
-    date_str = date.strftime("%Y-%m-%d")
 
     lines = []
 
     # Summary line
     total_hrs = fmt_hours(total_active)
-    afk_count = len(afk_gaps)
-    flow_count = len(flow_blocks)
-    lines.append(f"**Total:** {total_hrs} active | {afk_count} AFK gap{'s' if afk_count != 1 else ''} | {flow_count} flow block{'s' if flow_count != 1 else ''}\n")
+    lines.append(f"**Total:** {total_hrs} active\n")
 
     # By Category
     lines.append("### By Category")
@@ -49,15 +44,24 @@ def format_report(date, timeline_data):
         lines.append(f"- {cat}: {fmt_duration(minutes)} ({pct:.0f}%)")
     lines.append("")
 
-    # Flow Blocks
-    if flow_blocks:
-        lines.append("### Flow Blocks (30+ min uninterrupted)")
-        for fb in flow_blocks:
-            start = to_local(fb["start"]).strftime("%-I:%M%p").lower()
-            end = to_local(fb["end"]).strftime("%-I:%M%p").lower()
-            dur = fmt_duration(fb["active_minutes"])
-            lines.append(f"- {start}–{end} — {fb['app']} ({fb['category']}) — {dur}")
-        lines.append("")
+    # Top 5 Apps
+    from collections import defaultdict
+    from weekly_formatter import BROWSER_APPS, _domain_from_url
+    app_minutes = defaultdict(float)
+    for block in blocks:
+        if block["app"].lower() in BROWSER_APPS and block.get("web_urls"):
+            urls = block["web_urls"]
+            per_url = block["active_minutes"] / len(urls) if urls else 0
+            for url in urls:
+                domain = _domain_from_url(url)
+                app_minutes[domain or block["app"]] += per_url
+        else:
+            app_minutes[block["app"]] += block["active_minutes"]
+    top_apps = sorted(app_minutes.items(), key=lambda x: x[1], reverse=True)[:5]
+    lines.append("### Top Apps")
+    for i, (app, minutes) in enumerate(top_apps, 1):
+        lines.append(f"{i}. {app} — {fmt_hours(minutes)}")
+    lines.append("")
 
     # Timeline table (filter out very short blocks for readability)
     lines.append("### Timeline")

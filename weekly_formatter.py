@@ -2,7 +2,77 @@
 
 from datetime import datetime
 from collections import defaultdict
+from urllib.parse import urlparse
 from formatter import fmt_hours, fmt_duration, to_local
+
+BROWSER_APPS = {"arc", "google chrome", "chrome", "safari", "firefox", "brave", "arc.exe"}
+
+
+DOMAIN_LABELS = {
+    "docs.google.com": "Google Docs",
+    "mail.google.com": "Gmail",
+    "drive.google.com": "Google Drive",
+    "sheets.google.com": "Google Sheets",
+    "slides.google.com": "Google Slides",
+    "calendar.google.com": "Google Calendar",
+    "meet.google.com": "Google Meet",
+    "google.com": "Google Search",
+    "youtube.com": "YouTube",
+    "github.com": "GitHub",
+    "reddit.com": "Reddit",
+    "twitter.com": "X (Twitter)",
+    "x.com": "X (Twitter)",
+    "instagram.com": "Instagram",
+    "facebook.com": "Facebook",
+    "linkedin.com": "LinkedIn",
+    "notion.so": "Notion",
+    "figma.com": "Figma",
+    "slack.com": "Slack",
+    "discord.com": "Discord",
+    "stackoverflow.com": "Stack Overflow",
+    "amazon.com": "Amazon",
+    "netflix.com": "Netflix",
+    "twitch.tv": "Twitch",
+    "spotify.com": "Spotify Web",
+    "chat.openai.com": "ChatGPT",
+    "chatgpt.com": "ChatGPT",
+    "claude.ai": "Claude",
+    "medium.com": "Medium",
+    "wikipedia.org": "Wikipedia",
+    "tiktok.com": "TikTok",
+    "pinterest.com": "Pinterest",
+    "canva.com": "Canva",
+    "vercel.com": "Vercel",
+    "netlify.com": "Netlify",
+    "linear.app": "Linear",
+    "todoist.com": "Todoist",
+    "bitwarden.com": "Bitwarden",
+}
+
+
+def _domain_from_url(url):
+    """Extract a readable site name from a URL."""
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return None
+    if not host:
+        return None
+    if host.startswith("www."):
+        host = host[4:]
+    # Check exact match first, then try without subdomain
+    if host in DOMAIN_LABELS:
+        return DOMAIN_LABELS[host]
+    # Try base domain (e.g. 'en.wikipedia.org' -> 'wikipedia.org')
+    parts = host.split(".")
+    if len(parts) > 2:
+        base = ".".join(parts[-2:])
+        if base in DOMAIN_LABELS:
+            return DOMAIN_LABELS[base]
+    # Fallback: capitalize the second-level domain
+    if len(parts) >= 2:
+        return parts[-2].capitalize()
+    return host
 
 
 def _build_peak_windows(deep_work_by_hour):
@@ -38,6 +108,7 @@ def _aggregate_weekly_stats(days_data):
     """Aggregate timeline data across multiple days."""
     total_minutes = 0
     app_minutes = defaultdict(float)
+    device_minutes = defaultdict(float)
     deep_work_by_hour = defaultdict(float)
     all_flow_blocks = []
     all_afk_gaps = []
@@ -49,7 +120,19 @@ def _aggregate_weekly_stats(days_data):
         for cat, mins in data["category_totals"].items():
             category_totals[cat] += mins
         for block in data["blocks"]:
-            app_minutes[block["app"]] += block["active_minutes"]
+            device_minutes[block.get("device", "Unknown")] += block["active_minutes"]
+            # For browser apps, attribute time to domains instead
+            if block["app"].lower() in BROWSER_APPS and block.get("web_urls"):
+                urls = block["web_urls"]
+                per_url_minutes = block["active_minutes"] / len(urls) if urls else 0
+                for url in urls:
+                    domain = _domain_from_url(url)
+                    if domain:
+                        app_minutes[domain] += per_url_minutes
+                    else:
+                        app_minutes[block["app"]] += per_url_minutes
+            else:
+                app_minutes[block["app"]] += block["active_minutes"]
             if block["category"] == "Deep Work":
                 hour = block["start"].hour
                 deep_work_by_hour[hour] += block["active_minutes"]
@@ -57,7 +140,18 @@ def _aggregate_weekly_stats(days_data):
         all_afk_gaps.extend(data["afk_gaps"])
         first_block = data["blocks"][0] if data["blocks"] else None
         last_block = data["blocks"][-1] if data["blocks"] else None
-        top_app = max(((b["app"], b["active_minutes"]) for b in data["blocks"]), key=lambda x: x[1], default=("—", 0))
+        # Compute top app using domain-resolved names for browsers
+        day_app_minutes = defaultdict(float)
+        for block in data["blocks"]:
+            if block["app"].lower() in BROWSER_APPS and block.get("web_urls"):
+                urls = block["web_urls"]
+                per_url = block["active_minutes"] / len(urls) if urls else 0
+                for url in urls:
+                    domain = _domain_from_url(url)
+                    day_app_minutes[domain or block["app"]] += per_url
+            else:
+                day_app_minutes[block["app"]] += block["active_minutes"]
+        top_app = max(day_app_minutes.items(), key=lambda x: x[1], default=("—", 0))
         daily_summaries.append({
             "date": day_date, "total_minutes": day_total,
             "start": to_local(first_block["start"]) if first_block else None,
@@ -77,8 +171,10 @@ def _aggregate_weekly_stats(days_data):
     avg_afk_len = sum(g["duration_minutes"] for g in all_afk_gaps) / afk_count if afk_count else 0
     longest_afk = max(all_afk_gaps, key=lambda g: g["duration_minutes"]) if all_afk_gaps else None
     day_count = len(days_data)
+    device_breakdown = sorted(device_minutes.items(), key=lambda x: x[1], reverse=True)
     return {
         "total_minutes": total_minutes, "day_count": day_count, "top_apps": top_apps,
+        "device_breakdown": device_breakdown,
         "peak_windows": peak_windows, "category_totals": dict(category_totals),
         "all_flow_blocks": all_flow_blocks, "longest_flow": longest_flow,
         "top_flow_apps": top_flow_apps, "daily_summaries": daily_summaries,
@@ -95,6 +191,12 @@ def format_weekly_report(week_start, week_end, days_data):
     total_hrs = fmt_hours(stats["total_minutes"])
     avg_hrs = fmt_hours(stats["total_minutes"] / stats["day_count"]) if stats["day_count"] else "0hrs"
     lines.append(f"**Total:** {total_hrs} across {stats['day_count']} days | Avg {avg_hrs}/day\n")
+    if stats["device_breakdown"]:
+        lines.append("### Device Breakdown")
+        for device, minutes in stats["device_breakdown"]:
+            pct = (minutes / stats["total_minutes"] * 100) if stats["total_minutes"] else 0
+            lines.append(f"- {device}: {fmt_hours(minutes)} ({pct:.0f}%)")
+        lines.append("")
     if stats["peak_windows"]:
         total_dw = sum(w["total_minutes"] for w in stats["peak_windows"])
         lines.append("### Peak Work Hours")
