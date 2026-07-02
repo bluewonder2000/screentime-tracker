@@ -142,7 +142,42 @@ def generate_weekly_report(reference_date=None):
     output_path.write_text(report)
     print(f"  Written to {output_path}")
 
+    # Once a week is summarized, its daily dumps are redundant at the folder root.
+    # Move every daily dated on/before this week's end into _raw/YYYY-MM/, leaving
+    # only the current (unsummarized) week's dailies + all WEEKLY.md files at root.
+    consolidate_raw_dailies(week_end)
+
     return output_path
+
+
+def consolidate_raw_dailies(through_date):
+    """Move root daily SCREENTIME.md files dated on/before through_date into _raw/YYYY-MM/.
+
+    Keeps the folder root readable: weekly summaries + the current week's dailies stay
+    at the root; older, already-summarized daily dumps are filed under _raw/ by month
+    (still in the vault, fully intact - just out of the main view).
+    """
+    import re
+    import shutil
+
+    raw_root = OUTPUT_DIR / "_raw"
+    moved = 0
+    for f in OUTPUT_DIR.glob("* SCREENTIME.md"):  # non-recursive: root level only
+        m = re.match(r"^(\d{4})-(\d{2})-(\d{2}) SCREENTIME\.md$", f.name)
+        if not m:
+            continue
+        try:
+            file_date = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            continue
+        if file_date <= through_date:
+            dest_dir = raw_root / f"{m.group(1)}-{m.group(2)}"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(f), str(dest_dir / f.name))
+            moved += 1
+    if moved:
+        print(f"  Consolidated {moved} daily dump(s) into _raw/")
+    return moved
 
 
 def main():
